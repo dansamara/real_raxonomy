@@ -1,0 +1,262 @@
+<?php
+
+/**
+ * Implementation of hook_menu().
+ */
+function real_taxonomy_menu() {
+  $items['admin/settings/real-taxonomy'] = array(
+    'title' => 'Real Taxonomy',
+    'description' => 'Real taxonomy settings page',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('real_taxonomy_admin_settings'),
+    'access arguments' =>array('administer taxonomy'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'real_taxonomy.admin.inc',
+  );
+  $items['real-taxonomy-reset'] = array(
+    'title' => 'Real Taxonomy reset',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('real_taxonomy_reset'),
+    'access arguments' =>array('administer taxonomy'),
+    'type' => MENU_CALLBACK,
+    'file' => 'real_taxonomy.admin.inc',
+  );
+  return $items;
+}
+
+/**
+ * Implementation of hook_form_alter().
+ */
+function real_taxonomy_form_alter(&$form, $form_state, $form_id) {
+
+  if($form['#id'] == 'node-form') {
+    if(isset($form['taxonomy']) && ($vid = variable_get('real_taxonomy_vocabularies', 0))){
+      foreach($form['taxonomy'] as $key => $value){
+        // Replace drupal taxonomy form
+        if($key == $vid){
+          $default_value = array();
+          $node = $form['#node'];
+          if(isset($node->nid)){
+            foreach($node->taxonomy as $term){
+              if($term->vid == $vid && ($item = real_taxonomy_get_item_by_tid($term->tid))) {
+                $default_value[] = $item->id;
+              }
+            }
+          }
+          // Hide taxonomy form
+          $form['taxonomy'][$vid]['#access'] = false;
+          $form['taxonomy']['real_taxonomy'] = array(
+            '#type' => 'hierarchical_select',
+            '#title' => $form['taxonomy'][$vid]['#title'],
+            '#size' => 1,
+            '#config' => array(
+              'module' => 'real_taxonomy',
+              'save_lineage'    => 1,
+              'enforce_deepest' => 1,
+              'entity_count'    => 0,
+              'resizable'       => 0,
+              'animation_delay'    => 400,
+              'exclusive_lineages' => array(),
+              'render_flat_select' => 0,
+            ),
+            '#description' => $form['taxonomy'][$vid]['#description'],
+            '#weight' => $form['taxonomy'][$vid]['#weight'],
+            '#required'=> $form['taxonomy'][$vid]['#required'],
+            '#default_value' => $default_value,
+          );
+          break;
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Get elements with parent
+ * @param parent - id of parent element. 0 for root
+ * @return objects array
+ */
+function real_taxonomy_get_items($parent = 0){
+  $result = db_query("SELECT * FROM {real_taxonomy} WHERE parent = %d", $parent);
+  
+  $items = array();
+  while($row = db_fetch_object($result)) {
+    $items[$row->id] = $row->name;
+  }
+  return $items;
+};
+
+/**
+ * Get elements by id
+ * @param id  - element id
+ * @return object
+ */
+function real_taxonomy_get_item($id) {
+  return db_fetch_object(db_query("SELECT * FROM {real_taxonomy} WHERE id = %d", $id));
+};
+
+/**
+ * Get elements by tid
+ * @param id  - element id
+ * @return object
+ */
+function real_taxonomy_get_item_by_tid($tid) {
+  return db_fetch_object(db_query("SELECT * FROM {real_taxonomy} WHERE tid = %d", $tid));
+};
+
+/**
+ * Get parents lineage for element
+ * @param id  - element id
+ * @return objects array
+ */
+function real_taxonomy_get_parents($id) {
+  $parents = array();
+  while($item = real_taxonomy_get_item($id)) {
+    $parents[$item->id] = $item;
+    $id = $item->parent;
+  }
+  return $parents;
+}
+
+
+/**
+ * Implementation of hook_taxonomy().
+ */
+function real_taxonomy_taxonomy($op, $type, $array = NULL) {
+  if($type == 'term') {
+    if($op == 'insert' && isset($array['real_taxonomy_id'])) {
+      db_query("UPDATE {real_taxonomy} SET tid = %d WHERE id = %d", $array['tid'], $array['real_taxonomy_id']);
+    }elseif($op == 'delete') {
+      db_query("UPDATE {real_taxonomy} SET tid = 0 WHERE tid = %d", $array['tid']);
+    }
+  }
+  if($type == 'vocabulary' && $op == 'delete') {
+    if($array['vid'] == variable_get('real_taxonomy_vocabularies', 0)) {
+      db_query("UPDATE {real_taxonomy} SET tid = 0");
+      variable_del('real_taxonomy_vocabularies');
+    }
+  }
+}
+
+/**
+ * Implementation of hook_nodeapi().
+ */
+function real_taxonomy_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL){
+  $vid = variable_get('real_taxonomy_vocabularies', 0);
+  
+  switch ($op) {
+    case 'presave':
+      if(!$vid || !isset($node->taxonomy['real_taxonomy'])) {
+        return;
+      }
+      $old_terms = $node->taxonomy[$vid];
+      $node->taxonomy[$vid] = array();
+      foreach ($node->taxonomy['real_taxonomy'] as $id){
+        $item = real_taxonomy_get_item($id);
+        $parent = real_taxonomy_get_item($item->parent);
+        $parent = ($parent && isset($parent->tid))? $parent->tid : 0;
+        if ($item->tid == 0) {
+          $term = array(
+            'vid' => $vid,
+            'name' => $item->name,
+            'desription' => $item->description,
+            'parent' => $parent,
+            'real_taxonomy_id' => $item->id,
+          );
+          taxonomy_save_term($term);
+          $item->tid = $term['tid'];
+        }
+        $node->taxonomy[$vid][] = $item->tid;
+      }
+      // Если материал пересохранили с новыми значениями, проверяем старые,
+      // если к старым терминам ничего не привязано - удаляем их
+      if(count($old_terms)) {
+        real_taxonomy_delete_unused_terms(array_diff($old_terms, $node->taxonomy[$vid]));
+      }
+      break;
+    
+    case 'delete':
+      $tids = array();
+      foreach ($node->taxonomy as $term) {
+        if($term->vid == $vid){
+          $tids[] = $term->tid;
+        }
+      }
+      real_taxonomy_delete_unused_terms($tids);
+      break;
+  }
+}
+
+/**
+ * Delete unused terms
+ * @param $tids - array of terms tid
+ */
+function real_taxonomy_delete_unused_terms($tids){
+  if(!variable_get('real_taxonomy_delete_unused_terms', true)) {
+    return;
+  }
+
+  foreach($tids as $tid){
+    $result = taxonomy_select_nodes(array($tid));
+    $count = 0;
+    while(db_fetch_array($result)) {
+      $count++;
+    }
+    if($count < 2){
+      taxonomy_del_term($tid);
+    }
+  }
+}
+
+/**
+ * Implementation of hook_hierarchical_select_lineage().
+ */
+function real_taxonomy_hierarchical_select_lineage($item, $params) {
+  return array_keys(array_reverse(real_taxonomy_get_parents($item)));
+}
+  
+/**
+ * Implementation of hook_hierarchical_select_params().
+ */
+function real_taxonomy_hierarchical_select_params() {
+  return array();
+}
+
+/**
+ * Implementation of hook_hierarchical_select_root_level().
+ */
+function real_taxonomy_hierarchical_select_root_level($params) {
+  return real_taxonomy_get_items(0);
+}
+
+/**
+ * Implementation of hook_hierarchical_select_children().
+ */
+function real_taxonomy_hierarchical_select_children($parent, $params) {
+  return $parent > 0? real_taxonomy_get_items($parent) : array();
+}
+
+/**
+ * Implementation of hook_hierarchical_select_valid_item().
+ */
+function real_taxonomy_hierarchical_select_valid_item($item, $params) {
+  return (bool)real_taxonomy_get_item($item);
+}
+
+/**
+ * Implementation of hook_hierarchical_select_item_get_label().
+ */
+function real_taxonomy_hierarchical_select_item_get_label($item, $params) {
+  $item = real_taxonomy_get_item($item);
+  return $item->name;
+}
+
+/**
+ * Implementation of hook_hierarchical_select_implementation_info().
+ */
+function real_taxonomy_hierarchical_select_implementation_info() {
+  return array(
+    'hierarchy type' => t('Custom'),
+    'entity type'    => t('N/A'),
+  );
+}

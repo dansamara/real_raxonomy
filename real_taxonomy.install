@@ -1,0 +1,64 @@
+<?php
+
+/**
+ * Implementation of hook_install().
+ */
+function real_taxonomy_install(){
+  drupal_install_schema('real_taxonomy');
+}
+
+/**
+ * Implementation of hook_uninstall().
+ */
+function real_taxonomy_uninstall(){
+  drupal_uninstall_schema('real_taxonomy');
+}
+
+/**
+ * Implementation of hook_schema().
+ */
+function real_taxonomy_schema() {
+  $schema['real_taxonomy'] = array(
+    'fields' => array(
+	    'id' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Unique ID',
+      ),
+	    'name' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'Element name',
+      ),
+      'parent' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Parent for hierarhical elements. 0 for root',
+      ),
+      'description' => array(
+        'type' => 'text',
+        'size' => 'small',
+        'description' => 'Element description',
+      ),
+      'tid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Drupal term ID',
+      ),
+    ),
+    'primary key' => array('id'),
+    'indexes' => array(
+      'parent' => array('parent'),
+      'tid'=> array('tid'),
+    ),
+  );
+  return $schema;
+}

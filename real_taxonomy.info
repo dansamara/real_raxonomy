@@ -1,0 +1,6 @@
+name = Real Taxonomy
+descriptions = Small vocabularies for huge lists
+core = 6.x
+dependencies[] = taxonomy
+dependencies[] = hierarchical_select
+version = "6.x-1.0"
