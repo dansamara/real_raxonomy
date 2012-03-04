@@ -52,9 +52,9 @@ function real_taxonomy_form_alter(&$form, $form_state, $form_id) {
             '#config' => array(
               'module' => 'real_taxonomy',
               'save_lineage'    => 1,
-              'enforce_deepest' => 1,
+              'enforce_deepest' => 0,
               'entity_count'    => 0,
-              'resizable'       => 0,
+              'resizable'       => 1,
               'animation_delay'    => 400,
               'exclusive_lineages' => array(),
               'render_flat_select' => 0,
