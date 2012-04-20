@@ -45,7 +45,7 @@ function real_taxonomy_form_alter(&$form, $form_state, $form_id) {
           }
           // Hide taxonomy form
           $form['taxonomy'][$vid]['#access'] = false;
-          $form['taxonomy']['real_taxonomy'] = array(
+					$form['taxonomy']['real_taxonomy'] = array(
             '#type' => 'hierarchical_select',
             '#title' => $form['taxonomy'][$vid]['#title'],
             '#size' => 1,
@@ -64,6 +64,7 @@ function real_taxonomy_form_alter(&$form, $form_state, $form_id) {
             '#required'=> $form['taxonomy'][$vid]['#required'],
             '#default_value' => $default_value,
           );
+          $form['taxonomy'][$vid]['#required'] = false;					
           break;
         }
       }
@@ -149,7 +150,7 @@ function real_taxonomy_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL){
       if(!$vid || !isset($node->taxonomy['real_taxonomy'])) {
         return;
       }
-      $old_terms = $node->taxonomy[$vid];
+			$old_terms = (array)$node->taxonomy[$vid];
       $node->taxonomy[$vid] = array();
       foreach ($node->taxonomy['real_taxonomy'] as $id){
         $item = real_taxonomy_get_item($id);
@@ -170,9 +171,12 @@ function real_taxonomy_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL){
       }
       // Если материал пересохранили с новыми значениями, проверяем старые,
       // если к старым терминам ничего не привязано - удаляем их
-      if(count($old_terms)) {
+			if(count($old_terms)) {
         real_taxonomy_delete_unused_terms(array_diff($old_terms, $node->taxonomy[$vid]));
       }
+			if(isset($node->taxonomy['real_taxonomy'])){
+			  unset($node->taxonomy['real_taxonomy']);
+			}
       break;
     
     case 'delete':
